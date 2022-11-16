@@ -1,0 +1,88 @@
+---
+- hosts: "all"
+  become: true
+
+  tasks:
+    - name: Install LAMP Packages
+      apt: name={{ item }} update_cache=yes state=latest
+      loop:
+        [
+          "apache2",
+          "mysql-server",
+          "php",
+          "php-mysql",
+          "libapache2-mod-php",
+          "python3-mysqldb",
+        ]
+
+    #- name: Set the root password
+    #  mysql_user:
+    #    name: root
+    #    password: "{{ mysql_password }}"
+    #    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Remove all anonymous user accounts
+      mysql_user:
+        name: ""
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_password }}"
+
+    - name: Remove the MySQL test database
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_password }}"
+
+    - name: Creates database for WordPress
+      mysql_db:
+        name: "wordpress"
+        state: present
+        login_user: root
+        login_password: "{{ mysql_password }}"
+
+    - name: Download and unpack latest WordPress
+      unarchive:
+        src: https://wordpress.org/latest.zip
+        dest: "/var/www"
+        remote_src: yes
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
+
+    - name: Copy file with owner and permissions
+      copy:
+        src: files/wordpress.conf
+        dest: /etc/apache2/sites-available/wordpress.conf
+      notify: Reload Apache
+
+    - name: Enable new site
+      shell: /usr/sbin/a2ensite wordpress.conf
+      notify: Reload Apache
+
+    - name: Disable default Apache site
+      shell: /usr/sbin/a2dissite 000-default.conf
+      notify: Restart Apache
+    
+    - name: Set ownership
+      file:
+        path: "/var/www/wordpress"
+        state: directory
+        recurse: yes
+        owner: www-data
+        group: www-data
+
+  handlers:
+    - name: Reload Apache
+      service:
+        name: apache2
+        state: reloaded
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
